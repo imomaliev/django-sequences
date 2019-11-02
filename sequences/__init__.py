@@ -1,26 +1,5 @@
 from django.db import connections, router, transaction
 
-SELECT = """
-             SELECT last
-               FROM sequences_sequence
-              WHERE name = %s
-"""
-
-POSTGRESQL_UPSERT = """
-        INSERT INTO sequences_sequence (name, last)
-             VALUES (%s, %s)
-        ON CONFLICT (name)
-      DO UPDATE SET last = sequences_sequence.last + 1
-          RETURNING last;
-"""
-
-MYSQL_UPSERT = """
-        INSERT INTO sequences_sequence (name, last)
-             VALUES (%s, %s)
-   ON DUPLICATE KEY
-             UPDATE last = sequences_sequence.last + 1
-"""
-
 
 def get_last_value(
     sequence_name='default',
@@ -32,7 +11,7 @@ def get_last_value(
 
     """
     # Inner import because models cannot be imported before their application.
-    from .models import Sequence
+    from .models import Sequence, SELECT
 
     if using is None:
         using = router.db_for_read(Sequence)
@@ -80,6 +59,8 @@ def get_next_value(
         # PostgreSQL ≥ 9.5 supports "upsert".
         # This is about 3x faster as the naive implementation.
 
+        from .models import POSTGRESQL_UPSERT
+
         with connection.cursor() as cursor:
             cursor.execute(POSTGRESQL_UPSERT, [sequence_name, initial_value])
             result = cursor.fetchone()
@@ -94,6 +75,8 @@ def get_next_value(
 
         # MySQL supports "upsert" but not "returning".
         # This is about 2x faster as the naive implementation.
+
+        from .models import MYSQL_UPSERT, SELECT
 
         with transaction.atomic(using=using, savepoint=False):
             with connection.cursor() as cursor:
